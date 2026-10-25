@@ -1,19 +1,11 @@
 /**
- * Content Analysis Service using Ollama first, with Google Gemma 4 fallbacks
- * Supports:
- * 1. Ollama (Primary)
- * 2. Google AI Studio SDK (Fallback)
- * 3. OpenRouter Google Gemma 4 (Fallback)
+ * Study report generation using the configured local Ollama model.
  */
 
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const {
-  GEMINI_API_KEY,
-  GOOGLE_GEMMA_MODELS,
-  CANDIDATE_MODELS,
-  OPENROUTER_API_KEY,
-  PORT,
-  API_TIMEOUT_MS
+  OLLAMA_GENERATION_TIMEOUT_MS,
+  OLLAMA_BASE_URL,
+  OLLAMA_MODEL
 } = require('../config/constants');
 const { robustParseJSON } = require('../utils/jsonParser');
 
@@ -69,21 +61,8 @@ Respond strictly with valid JSON with this exact schema:
 }`;
 }
 
-// ============================================================
-// 2. Direct Google AI Studio SDK (Gemma 4 Models)
-// ============================================================
-async function callGoogleAIStudio(modelName, apiKey, prompt, fallbackContext = '') {
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: modelName
-  });
-
-  const result = await model.generateContent(prompt);
-  const response = await result.response;
-  const raw = response.text() || '';
-  const parsedData = robustParseJSON(raw);
-
-  const safeData = {
+function normalizeReport(parsedData) {
+  return {
     title: parsedData.title || '',
     analysis_and_solution: parsedData.analysis_and_solution || parsedData.summary || '',
     key_points: Array.isArray(parsedData.key_points) ? parsedData.key_points : [],
@@ -92,30 +71,18 @@ async function callGoogleAIStudio(modelName, apiKey, prompt, fallbackContext = '
     flashcards: Array.isArray(parsedData.flashcards) ? parsedData.flashcards : [],
     tags: Array.isArray(parsedData.tags) ? parsedData.tags : []
   };
-
-  return {
-    source: 'Google AI Studio SDK',
-    model: `google/${modelName}`,
-    data: safeData
-  };
 }
 
-// ============================================================
-// 1. Ollama (Primary)
-// ============================================================
 async function callOllama(prompt) {
-  const baseUrl = (process.env.OLLAMA_BASE_URL || 'http://localhost:11434')
-    .replace(/\/+$/, '');
-  const model = process.env.OLLAMA_MODEL || 'gemma4:cloud';
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), OLLAMA_GENERATION_TIMEOUT_MS);
 
   try {
-    const response = await fetch(`${baseUrl}/api/chat`, {
+    const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model,
+        model: OLLAMA_MODEL,
         messages: [
           {
             role: 'system',
@@ -140,149 +107,69 @@ async function callOllama(prompt) {
       throw new Error('Ollama returned an empty response.');
     }
 
-    const parsedData = robustParseJSON(raw);
-    const safeData = {
-      title: parsedData.title || '',
-      analysis_and_solution: parsedData.analysis_and_solution || parsedData.summary || '',
-      key_points: Array.isArray(parsedData.key_points) ? parsedData.key_points : [],
-      action_items: Array.isArray(parsedData.action_items) ? parsedData.action_items : [],
-      resources_and_links: Array.isArray(parsedData.resources_and_links) ? parsedData.resources_and_links : [],
-      flashcards: Array.isArray(parsedData.flashcards) ? parsedData.flashcards : [],
-      tags: Array.isArray(parsedData.tags) ? parsedData.tags : []
-    };
-
     return {
       source: 'Ollama',
-      model: json.model || model,
-      data: safeData
+      model: json.model || OLLAMA_MODEL,
+      data: normalizeReport(robustParseJSON(raw))
     };
   } finally {
     clearTimeout(timeoutId);
   }
 }
 
-// ============================================================
-// 3. OpenRouter Fallback (Strictly Gemma 4)
-// ============================================================
-async function callOpenRouter(model, apiKey, prompt, fallbackContext = '') {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+async function analyzeContent(transcript, caption, url) {
+  const prompt = buildEducationalPrompt(transcript, caption, url);
+  console.log(`Generating study report with local Ollama model ${OLLAMA_MODEL}...`);
 
   try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': `http://localhost:${PORT}`,
-        'X-Title': 'Reelsidian Educational Engine'
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [
-          {
-            role: 'system',
-            content: 'You convert video transcripts into structured study notes. Output only raw valid JSON without markdown code blocks.'
-          },
-          { role: 'user', content: prompt }
-        ]
-      }),
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`OpenRouter HTTP ${response.status}: ${errText}`);
-    }
-
-    const json = await response.json();
-    if (json.error) {
-      throw new Error(`OpenRouter API error: ${json.error.message || JSON.stringify(json.error)}`);
-    }
-
-    const raw = json.choices?.[0]?.message?.content || '';
-    const parsedData = robustParseJSON(raw);
-
-    const safeData = {
-      title: parsedData.title || '',
-      analysis_and_solution: parsedData.analysis_and_solution || parsedData.summary || '',
-      key_points: Array.isArray(parsedData.key_points) ? parsedData.key_points : [],
-      action_items: Array.isArray(parsedData.action_items) ? parsedData.action_items : [],
-      resources_and_links: Array.isArray(parsedData.resources_and_links) ? parsedData.resources_and_links : [],
-      flashcards: Array.isArray(parsedData.flashcards) ? parsedData.flashcards : [],
-      tags: Array.isArray(parsedData.tags) ? parsedData.tags : []
-    };
-
-    return {
-      source: 'OpenRouter (Gemma 4)',
-      model: json.model || model,
-      data: safeData
-    };
+    const result = await callOllama(prompt);
+    console.log(`Local Ollama succeeded: ${result.model}`);
+    return result;
   } catch (err) {
-    clearTimeout(timeoutId);
-    throw err;
+    const isTimeout = err.name === 'AbortError';
+    const detail = isTimeout
+      ? `The local model did not finish within ${Math.ceil(OLLAMA_GENERATION_TIMEOUT_MS / 1000)} seconds. It may still be loading or processing a large request; wait for Ollama to finish and retry.`
+      : err.message;
+    const nextStep = isTimeout
+      ? 'Increase OLLAMA_GENERATION_TIMEOUT_MS if your computer needs more time.'
+      : `Start Ollama and ensure the model is installed with "ollama pull ${OLLAMA_MODEL}".`;
+    const error = new Error(
+      `Local Ollama could not generate the study report using "${OLLAMA_MODEL}": ${detail} ${nextStep}`
+    );
+    error.cause = err;
+    throw error;
   }
 }
 
-// ============================================================
-// Main Analysis Pipeline: Prioritizes Ollama
-// ============================================================
-async function analyzeContent(transcript, caption, url) {
-  const prompt = buildEducationalPrompt(transcript, caption, url);
-  const fallbackContext = transcript || caption || 'Educational video insights';
+async function checkOllamaReady() {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
 
   try {
-    console.log('Using Ollama for study-report generation...');
-    const result = await callOllama(prompt);
-    console.log(`Ollama succeeded: ${result.model}`);
-    return result;
+    const response = await fetch(`${OLLAMA_BASE_URL}/api/tags`, {
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      return { ready: false, error: `Ollama returned HTTP ${response.status}.` };
+    }
+
+    const data = await response.json();
+    const models = Array.isArray(data.models) ? data.models : [];
+    const installed = models.some((model) =>
+      model.name === OLLAMA_MODEL || model.model === OLLAMA_MODEL
+    );
+    return {
+      ready: installed,
+      error: installed ? null : `Model "${OLLAMA_MODEL}" is not installed locally.`
+    };
   } catch (err) {
-    console.warn(`Ollama failed: ${err.message}`);
-    console.warn('Falling back to existing cloud providers...');
+    return { ready: false, error: `Ollama is unavailable: ${err.message}` };
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  // Pathway 2: Google AI Studio SDK (Direct Gemma 4) fallback
-  if (GEMINI_API_KEY && GEMINI_API_KEY.trim()) {
-    console.log('⚡ Using Google AI Studio SDK with direct Google Gemma 4 models...');
-    for (const modelName of GOOGLE_GEMMA_MODELS) {
-      try {
-        console.log(`🧠 Querying Google AI Studio Gemma 4: ${modelName}...`);
-        const result = await callGoogleAIStudio(modelName, GEMINI_API_KEY, prompt, fallbackContext);
-        console.log(`✅ Success via Google AI Studio SDK: ${result.model}`);
-        return result;
-      } catch (err) {
-        console.warn(`⚠️ Google AI Studio (${modelName}) notice: ${err.message}. Trying next Gemma 4 model...`);
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-      }
-    }
-  } else {
-    console.log('ℹ️ GEMINI_API_KEY not yet detected in server/.env — using Google Gemma 4 via OpenRouter.');
-  }
-
-  // Pathway 3: OpenRouter Google Gemma 4 (Strictly Gemma 4 models only)
-  if (!OPENROUTER_API_KEY || !OPENROUTER_API_KEY.trim()) {
-    throw new Error('Please set either GEMINI_API_KEY or OPENROUTER_API_KEY in server/.env');
-  }
-
-  let lastError = null;
-  for (const model of CANDIDATE_MODELS) {
-    try {
-      console.log(`🧠 Querying Google Gemma 4 model: ${model}...`);
-      const result = await callOpenRouter(model, OPENROUTER_API_KEY, prompt, fallbackContext);
-      console.log(`✅ Success with Google Gemma 4: ${result.model}`);
-      return result;
-    } catch (err) {
-      console.warn(`⚠️ Google Gemma 4 (${model}) issue: ${err.message}. Trying next Gemma 4 variant...`);
-      lastError = err;
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-    }
-  }
-
-  throw lastError || new Error('Google Gemma 4 models failed to respond.');
 }
 
 module.exports = {
-  analyzeContent
+  analyzeContent,
+  checkOllamaReady
 };

@@ -2,8 +2,81 @@
   "name": "mlh-hackathon-workspace",
   "version": "1.0.0",
   "description": "Root workspace runner",
+  "main": "desktop/main.js",
+  "private": true,
+  "engines": {
+    "node": ">=22.12"
+  },
   "scripts": {
-    "start": "cd server && npm start",
-    "dev": "cd server && npm start"
+    "start": "electron .",
+    "dev": "electron .",
+    "test": "npm --prefix server test",
+    "dist:win": "electron-builder --win nsis",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.11.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.1"
+  },
+  "devDependencies": {
+    "electron": "^42.11.16",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.reelsidian.desktop",
+    "productName": "Reelsidian",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**"
+    ],
+    "extraResources": [
+      {
+        "from": "server/src/services/whisper_worker.py",
+        "to": "whisper/whisper_worker.py"
+      },
+      {
+        "from": "server/requirements.txt",
+        "to": "whisper/requirements.txt"
+      }
+    ],
+    "files": [
+      "desktop/**/*",
+      "server/server.js",
+      "server/requirements.txt",
+      "server/public/**/*",
+      "server/src/**/*",
+      "!server/src/**/*.test.js",
+      "!server/data/**/*",
+      "!server/whisper-venv/**/*",
+      "!server/node_modules/**/*",
+      "!server/src/services/whisper_worker.py"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Reelsidian"
+    }
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true,
+    "electron-winstaller@5.4.0": true,
+    "electron@42.11.16": true
   }
 }

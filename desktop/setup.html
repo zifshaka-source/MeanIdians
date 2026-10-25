@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reelsidian Setup</title>
+  <link rel="stylesheet" href="setup.css">
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">LOCAL DESKTOP</p>
+      <h1>Reelsidian</h1>
+      <p>Preparing your local learning workspace. Model downloads are optional and start only when you choose them.</p>
+    </header>
+
+    <section aria-labelledby="backend-heading">
+      <h2 id="backend-heading">Application</h2>
+      <p id="backendStatus" class="status">Checking local backend…</p>
+      <button id="retryBackend" class="secondary">Retry backend</button>
+    </section>
+
+    <section aria-labelledby="ollama-heading">
+      <h2 id="ollama-heading">Local study model</h2>
+      <p id="ollamaStatus" class="status">Checking Ollama…</p>
+      <p class="hint">Gemma 4 E2B needs about 5 GB of free disk space and an internet connection for its one-time download.</p>
+      <div class="actions">
+        <button id="openOllama">Get Ollama</button>
+        <button id="startOllama" class="secondary">Start Ollama service</button>
+        <button id="downloadOllama" class="secondary">Download Gemma 4 E2B</button>
+        <button id="cancelDownload" class="secondary" disabled>Cancel download</button>
+      </div>
+    </section>
+
+    <section aria-labelledby="whisper-heading">
+      <h2 id="whisper-heading">Local transcription</h2>
+      <p id="whisperStatus" class="status">Checking Whisper…</p>
+      <p class="hint">Whisper setup installs Python packages from the internet. Its small model download is approximately 500 MB and is kept in your user data folder.</p>
+      <div class="actions">
+        <button id="setupWhisper">Set up Whisper runtime</button>
+        <button id="downloadWhisper" class="secondary">Download Whisper model</button>
+        <button id="cancelSetup" class="secondary" disabled>Cancel setup</button>
+      </div>
+    </section>
+
+    <section aria-labelledby="data-heading">
+      <h2 id="data-heading">Private local data</h2>
+      <p class="status">Saved reports and goals are stored on this computer:</p>
+      <code id="databasePath">Loading data location…</code>
+      <p class="hint">The database is preserved when the app is updated or uninstalled. Uninstalling does not remove saved learning content.</p>
+    </section>
+
+    <section aria-labelledby="progress-heading">
+      <h2 id="progress-heading">Setup activity</h2>
+      <pre id="progress" role="status" aria-live="polite">Ready.</pre>
+    </section>
+
+    <footer>
+      <button id="openApp" class="primary">Open Reelsidian</button>
+    </footer>
+  </main>
+  <script src="setup.js"></script>
+</body>
+</html>

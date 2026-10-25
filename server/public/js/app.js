@@ -2,8 +2,8 @@
  * Reelsidian Dashboard Application Logic
  * Formats reports matching the notebook layout:
  * 1. Audio Player Preview
- * 2. ElevenLabs Verbatim Transcript Box
- * 3. Deep Analysis & Solution (Google Gemma 4)
+ * 2. Local Whisper Transcript Box
+ * 3. Deep Analysis & Solution (Local Gemma 4)
  * 4. Core Key Points & Action Items
  * 5. Verified Resources & Documentation Links
  * 6. Active Recall Flashcards
@@ -145,10 +145,24 @@ function addCard(data) {
   renderFeed();
 }
 
-function removeCard(instanceId) {
+async function removeCard(instanceId) {
   // Locate the exact single card in state by unique instance ID
   const index = state.cards.findIndex((c) => c.id === instanceId);
   if (index === -1) return;
+
+  const card = state.cards[index];
+  try {
+    const response = await fetch(`/api/reports/${encodeURIComponent(card.backendId)}`, {
+      method: 'DELETE'
+    });
+    if (!response.ok && response.status !== 404) {
+      const data = await response.json();
+      throw new Error(data.error || 'Could not delete saved report.');
+    }
+  } catch (err) {
+    showStatus(`Could not delete saved report: ${err.message}`, true);
+    return;
+  }
 
   // Smooth DOM exit animation before removing from state
   const cardEl = document.getElementById(instanceId);
@@ -157,11 +171,13 @@ function removeCard(instanceId) {
     cardEl.style.opacity = '0';
     cardEl.style.transform = 'scale(0.96) translateY(-10px)';
     setTimeout(() => {
-      state.cards.splice(index, 1);
+      const currentIndex = state.cards.findIndex((c) => c.id === instanceId);
+      if (currentIndex !== -1) state.cards.splice(currentIndex, 1);
       renderFeed();
     }, 220);
   } else {
-    state.cards.splice(index, 1);
+    const currentIndex = state.cards.findIndex((c) => c.id === instanceId);
+    if (currentIndex !== -1) state.cards.splice(currentIndex, 1);
     renderFeed();
   }
 }
@@ -179,7 +195,7 @@ function copyMarkdown(cardId) {
 
   const a = card.analysis || {};
   let md = `# ${a.title || 'Reel Knowledge Notes'}\n`;
-  md += `**Creator**: @${card.creator || 'unknown'} | **Model**: ${card.modelUsed || 'Google Gemma 4'}\n\n`;
+  md += `**Creator**: @${card.creator || 'unknown'} | **Model**: ${card.modelUsed || 'Local Gemma 4'}\n\n`;
 
   if (a.analysis_and_solution) {
     md += `## Detailed Analysis & Solution\n${a.analysis_and_solution}\n\n`;
@@ -211,7 +227,7 @@ function copyMarkdown(cardId) {
   }
 
   if (card.transcript && card.transcript.length > 5) {
-    md += `## Spoken Audio Transcript (ElevenLabs Scribe v2)\n> ${card.transcript}\n`;
+    md += `## Spoken Audio Transcript (Local Whisper)\n> ${card.transcript}\n`;
   }
 
   navigator.clipboard.writeText(md).then(() => {
@@ -281,20 +297,20 @@ function renderFeed() {
           </div>
         ` : ''}
 
-        <!-- SECTION 2: TRANSCRIPT BOX (ElevenLabs) -->
+        <!-- SECTION 2: TRANSCRIPT BOX (Local Whisper) -->
         <div class="report-section">
           <div class="section-label">
             <span>Spoken Transcript</span>
-            <span class="section-badge-tag">ElevenLabs Scribe v2</span>
+            <span class="section-badge-tag">Local Whisper</span>
           </div>
           <p class="transcript-text">"${esc(data.transcript || 'No spoken audio transcript detected.')}"</p>
         </div>
 
-        <!-- SECTION 3: DEEP ANALYSIS & SOLUTION (Google Gemma 4) -->
+        <!-- SECTION 3: DEEP ANALYSIS & SOLUTION (Local Gemma 4) -->
         <div class="report-section">
           <div class="section-label">
             <span>Analysis & Solution</span>
-            <span class="section-badge-tag">Google Gemma 4</span>
+            <span class="section-badge-tag">Local Gemma 4</span>
           </div>
           <div class="analysis-text">
             ${formatParagraphs(a.analysis_and_solution || a.summary || 'Analysis generated from video audio.')}
@@ -423,7 +439,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const submitBtn = document.getElementById('fileSubmitBtn');
       submitBtn.disabled = true;
       submitBtn.textContent = 'Transcribing & Analyzing...';
-      showStatus('Uploading & running ElevenLabs Scribe v2 + Google Gemma 4...');
+      showStatus('Uploading & running local Whisper + Gemma 4...');
 
       const formData = new FormData();
       formData.append('audio', audioInput.files[0]);
@@ -463,7 +479,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const submitBtn = document.getElementById('textSubmitBtn');
       submitBtn.disabled = true;
       submitBtn.textContent = 'Analyzing Text...';
-      showStatus('Analyzing text context with Google Gemma 4...');
+      showStatus('Analyzing text context with local Gemma 4...');
 
       try {
         const res = await fetch('/api/analyze-text', {
@@ -535,6 +551,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Load Initial Graph State
   loadInitialGraph();
+  loadInitialReports();
 });
 
 // ==========================================
@@ -821,6 +838,30 @@ async function loadInitialGraph() {
   }
 }
 
+async function loadInitialReports() {
+  try {
+    const reports = [];
+    let offset = 0;
+    let total = 0;
+
+    do {
+      const response = await fetch(`/api/reports?limit=200&offset=${offset}`);
+      if (!response.ok) {
+        throw new Error(`Saved reports request failed (${response.status}).`);
+      }
+      const data = await response.json();
+      reports.push(...(data.reports || []));
+      total = data.total || 0;
+      offset += data.limit || 200;
+    } while (offset < total);
+
+    reports.reverse().forEach(addCard);
+  } catch (err) {
+    console.warn('Saved reports could not be restored:', err.message);
+    showStatus(`Saved reports could not be restored: ${err.message}`, true);
+  }
+}
+
 function renderGoalsList(goals) {
   if (!goalsContainer) return;
   if (!goals.length) {
@@ -898,7 +939,7 @@ function handleLinkClick(link) {
   const tgtNode = state.graphData.nodes.find(n => n.id === tId);
 
   title.textContent = `${srcNode ? srcNode.label : 'Report'} ➔ ${tgtNode ? tgtNode.label : 'Goal'}`;
-  body.textContent = link.reason || 'Semantic bridge identified by Gemini as beneficial for this academic aim.';
+  body.textContent = link.reason || 'Semantic bridge identified as relevant to this academic aim.';
   meta.innerHTML = `<span>Relevance Score: ${Math.round((link.score || 0.7) * 100)}%</span>`;
 
   connectionInspector.classList.add('active');

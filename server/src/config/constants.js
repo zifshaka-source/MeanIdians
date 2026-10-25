@@ -16,33 +16,40 @@ if (fs.existsSync(rootEnv)) {
 // 3. Fallback standard CWD .env
 require('dotenv').config();
 
-// Embedded runtime fallback keys (ensures instant out-of-the-box operation on cloud deployments like Vercel)
-const _d = (b) => Buffer.from(b, 'base64').toString('utf8');
-const FALLBACK_GEMINI = _d('QVEuQWI4Uk42Sk8zUkx2elRwNVI1QkIxMFZYUVREVEQ4c19EdFF2Zm1iR1BUM2dFMnA5bkE=');
-const FALLBACK_OPENROUTER = _d('c2stb3ItdjEtYzFhOGM2MGFlOTFlMGM5NWM0ZWJlNDMyMzUwOGYwMGI4NGRlYzQxMDEyMWUzMDI5ZWQ4YTdjYjc1ODFlOTAxOQ==');
-const FALLBACK_ELEVENLABS = _d('c2tfYjNkNmIwODQ0Y2YzNDBmOTcyNzA5ZTExYTVmNzQ2NzgxYTlkMjhhYzY0YmJiYmRi');
-const FALLBACK_MODEL = _d('Z29vZ2xlL2dlbW1hLTQtMzFiLWl0');
+function getLocalOllamaBaseUrl(value) {
+  const configuredUrl = value || 'http://localhost:11434';
+  let parsedUrl;
+
+  try {
+    parsedUrl = new URL(configuredUrl);
+  } catch {
+    throw new Error('OLLAMA_BASE_URL must be a valid local URL (http://localhost:11434).');
+  }
+
+  if (
+    parsedUrl.protocol !== 'http:' ||
+    !['localhost', '127.0.0.1'].includes(parsedUrl.hostname) ||
+    parsedUrl.username ||
+    parsedUrl.password
+  ) {
+    throw new Error('OLLAMA_BASE_URL must point to localhost or 127.0.0.1 over HTTP.');
+  }
+
+  return configuredUrl.replace(/\/+$/, '');
+}
 
 module.exports = {
   PORT: process.env.PORT || 5000,
-  // Google AI Studio Direct Gemma 4 Settings
-  GEMINI_API_KEY: (process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_KEY || process.env.GOOGLE_API_KEY || FALLBACK_GEMINI).trim(),
-  GOOGLE_GEMMA_MODELS: [
-    'models/gemma-4-31b-it',
-    'models/gemma-4-26b-a4b-it'
-  ],
-  // OpenRouter Gemma 4 Models (strictly Gemma 4)
-  PRIMARY_MODEL: process.env.OPENROUTER_MODEL || FALLBACK_MODEL,
-  CANDIDATE_MODELS: [
-    process.env.OPENROUTER_MODEL || FALLBACK_MODEL,
-    'google/gemma-4-26b-a4b-it',
-    'google/gemma-4-31b-it:free',
-    'google/gemma-4-26b-a4b-it:free'
-  ],
-  ELEVENLABS_API_KEY: (process.env.ELEVENLABS_API_KEY || FALLBACK_ELEVENLABS).trim(),
-  OPENROUTER_API_KEY: (process.env.OPENROUTER_API_KEY || FALLBACK_OPENROUTER).trim(),
-  // Maximum audio upload size (RAM only, discarded immediately)
+  OLLAMA_BASE_URL: getLocalOllamaBaseUrl(process.env.OLLAMA_BASE_URL),
+  OLLAMA_MODEL: process.env.OLLAMA_MODEL || 'gemma4:e2b',
+  WHISPER_MODEL: process.env.WHISPER_MODEL || 'small',
+  WHISPER_PYTHON: process.env.WHISPER_PYTHON ||
+    path.resolve(__dirname, '../../whisper-venv/Scripts/python.exe'),
+  WHISPER_WORKER_PATH: process.env.WHISPER_WORKER_PATH ||
+    path.join(__dirname, '../services/whisper_worker.py'),
+  WHISPER_TIMEOUT_MS: Number(process.env.WHISPER_TIMEOUT_MS) || 600000,
+  // Maximum uploaded audio size before local Whisper writes a temporary file.
   MAX_AUDIO_SIZE: 30 * 1024 * 1024,
-  // Fetch timeout for external AI APIs
-  API_TIMEOUT_MS: 45000
+  API_TIMEOUT_MS: 120000,
+  OLLAMA_GENERATION_TIMEOUT_MS: Number(process.env.OLLAMA_GENERATION_TIMEOUT_MS) || 600000
 };

@@ -1,67 +1,128 @@
 /**
- * Transcription Service using ElevenLabs Scribe v2
- * Includes graceful fallback for music-only reels, silence, or missing credentials.
+ * Local faster-whisper transcription.
  */
 
-const { ELEVENLABS_API_KEY, API_TIMEOUT_MS } = require('../config/constants');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const fs = require('fs/promises');
+const os = require('os');
+const path = require('path');
+const {
+  WHISPER_MODEL,
+  WHISPER_PYTHON,
+  WHISPER_WORKER_PATH,
+  WHISPER_TIMEOUT_MS
+} = require('../config/constants');
 
-async function transcribeAudio(buffer, mimeType) {
-  if (!ELEVENLABS_API_KEY || !ELEVENLABS_API_KEY.trim()) {
-    console.warn('⚠️ ELEVENLABS_API_KEY not configured. Falling back to caption/visual mode.');
-    return {
-      transcript: '',
-      hasSpeech: false,
-      notice: 'Audio transcription bypassed (No ElevenLabs key configured).'
-    };
+const execFileAsync = promisify(execFile);
+
+function getAudioExtension(mimeType) {
+  const mime = (mimeType || '').split(';', 1)[0].trim().toLowerCase();
+  const extensions = {
+    'audio/mp4': '.mp4',
+    'audio/mpeg': '.mp3',
+    'audio/ogg': '.ogg',
+    'audio/wav': '.wav',
+    'audio/webm': '.webm',
+    'audio/x-wav': '.wav'
+  };
+  return extensions[mime] || '.webm';
+}
+
+function getWorkerError(error) {
+  if (typeof error.stdout === 'string') {
+    let workerResult;
+    try {
+      workerResult = JSON.parse(error.stdout);
+    } catch {
+      return error;
+    }
+    if (workerResult.error) {
+      return new Error(workerResult.error);
+    }
   }
+  return error;
+}
 
-  const formData = new FormData();
-  formData.append('file', new Blob([buffer], { type: mimeType || 'audio/webm' }), 'reel.webm');
-  formData.append('model_id', 'scribe_v2');
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+async function transcribeLocally(buffer, mimeType) {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'reelsidian-whisper-'));
+  const audioPath = path.join(tempDir, `recording${getAudioExtension(mimeType)}`);
+  const workerPath = WHISPER_WORKER_PATH;
 
   try {
-    const response = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
-      method: 'POST',
-      headers: { 'xi-api-key': ELEVENLABS_API_KEY },
-      body: formData,
-      signal: controller.signal
-    });
+    await fs.writeFile(audioPath, buffer);
 
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.warn(`⚠️ ElevenLabs returned status ${response.status}: ${errText}`);
-      // Graceful degradation: do not throw fatal error, proceed with caption analysis
-      return {
-        transcript: '',
-        hasSpeech: false,
-        notice: `ElevenLabs STT notice (${response.status}). Using reel caption context.`
-      };
+    let stdout;
+    try {
+      ({ stdout } = await execFileAsync(
+        WHISPER_PYTHON,
+        [workerPath, audioPath],
+        {
+          encoding: 'utf8',
+          maxBuffer: 4 * 1024 * 1024,
+          timeout: WHISPER_TIMEOUT_MS,
+          windowsHide: true
+        }
+      ));
+    } catch (error) {
+      throw getWorkerError(error);
     }
 
-    const data = await response.json();
-    const text = (data.text || '').trim();
+    const result = JSON.parse(stdout);
+    if (typeof result.transcript !== 'string') {
+      throw new Error(result.error || 'Whisper worker returned an invalid response.');
+    }
 
+    const transcript = result.transcript.trim();
     return {
-      transcript: text,
-      hasSpeech: text.length > 0,
-      notice: text.length > 0 ? null : 'No spoken words detected (Music/visual reel).'
+      transcript,
+      hasSpeech: transcript.length > 0,
+      notice: transcript.length > 0 ? null : 'No spoken words detected (music/visual reel).'
     };
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function transcribeAudio(buffer, mimeType) {
+  try {
+    const result = await transcribeLocally(buffer, mimeType);
+    console.log(`Local Whisper (${WHISPER_MODEL}) transcription succeeded.`);
+    return result;
   } catch (err) {
-    clearTimeout(timeoutId);
-    console.warn(`⚠️ Audio transcription failed: ${err.message}. Continuing with post caption.`);
+    console.warn(`Local Whisper transcription failed: ${err.message}`);
     return {
       transcript: '',
       hasSpeech: false,
-      notice: `Transcription unavailable (${err.message}). Using reel caption.`
+      notice: `Local transcription unavailable (${err.message}). Using provided caption context if available.`
+    };
+  }
+}
+
+async function checkWhisperReady() {
+  try {
+    await fs.access(WHISPER_WORKER_PATH);
+    const { stdout } = await execFileAsync(WHISPER_PYTHON, [WHISPER_WORKER_PATH, '--check'], {
+      encoding: 'utf8',
+      timeout: 30000,
+      windowsHide: true
+    });
+    const result = JSON.parse(stdout);
+    return {
+      ready: result.ready === true,
+      model: WHISPER_MODEL,
+      error: result.ready ? null : result.error || 'Whisper model files are not downloaded.'
+    };
+  } catch (err) {
+    return {
+      ready: false,
+      model: WHISPER_MODEL,
+      error: `Local Whisper runtime is unavailable: ${err.message}`
     };
   }
 }
 
 module.exports = {
-  transcribeAudio
+  transcribeAudio,
+  checkWhisperReady
 };

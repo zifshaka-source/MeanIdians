@@ -4,9 +4,9 @@
 > *Turn passive doom-scrolling into an interconnected, actionable second brain.*
 
 [![Manifest V3](https://img.shields.io/badge/Chrome%20Extension-Manifest%20V3-blue.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/)
-[![Node.js](https://img.shields.io/badge/Node.js-18%2B-green.svg)](https://nodejs.org/)
-[![Google Gemma 4](https://img.shields.io/badge/AI%20Model-Google%20Gemma%204-orange.svg)](https://ai.google.dev/)
-[![ElevenLabs](https://img.shields.io/badge/STT-ElevenLabs%20Scribe%20v2-purple.svg)](https://elevenlabs.io/)
+[![Node.js](https://img.shields.io/badge/Node.js-22.12%2B-green.svg)](https://nodejs.org/)
+[![Local Gemma 4](https://img.shields.io/badge/AI%20Model-Local%20Gemma%204-orange.svg)](https://ollama.com/)
+[![Local Whisper](https://img.shields.io/badge/STT-Local%20Whisper-purple.svg)](https://github.com/SYSTRAN/faster-whisper)
 [![Knowledge Graph](https://img.shields.io/badge/Visualization-Force--Graph%20%2B%20D3.js-red.svg)](https://github.com/vasturiano/force-graph)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -45,10 +45,10 @@ However, saving them creates a **digital graveyard**:
                                ▼
 ┌──────────────────────────────────────────────────────────────┐
 │                REELSIDIAN NODE.JS SERVER                     │
-│  - Speech Transcription: ElevenLabs Scribe v2                │
-│  - Academic Study Synthesis: Google Gemma 4                  │
+│  - Speech Transcription: Local faster-whisper                │
+│  - Academic Study Synthesis: Local Gemma 4 via Ollama         │
 │  - Canonical De-Duplication Engine (SHA-256 Fingerprinting)  │
-│  - AI Semantic Link Bridge (Gemini Evaluation Engine)        │
+│  - Local Semantic Link Evaluation (Ollama + keyword fallback)│
 └──────────────────────────────┬───────────────────────────────┘
                                │ WebSocket Real-Time Stream
                                ▼
@@ -75,8 +75,8 @@ However, saving them creates a **digital graveyard**:
 - **Instant Dispatch Confirmation**: Displays a completion banner when the audio is successfully transmitted to the server with an **Open Dashboard** shortcut button.
 
 ### 2. High-Yield Academic Study Synthesis
-- **Verbatim Speech Transcription**: Powered by **ElevenLabs Scribe v2** to accurately transcribe technical terminology, mixed accents, and fast speech over background music.
-- **Structured Knowledge Extraction**: Powered by **Google Gemma 4** (via Google AI Studio / OpenRouter):
+- **Local Speech Transcription**: Powered by **faster-whisper** running on CPU with int8 quantization.
+- **Structured Knowledge Extraction**: Powered by the local **Gemma 4 E2B** model through Ollama:
   - **Core Problem Breakdown**: Identifies the fundamental question or challenge.
   - **Detailed Solution & Mechanics**: Explains the technical and theoretical foundation without hand-waving.
   - **Core Key Points**: Scannable, bulleted principles.
@@ -90,7 +90,7 @@ However, saving them creates a **digital graveyard**:
   - **Academic Goals** anchor to the right ($x = +260$).
   - Repulsive force simulation keeps cards spaced with zero overlap.
 - **Frosted Glass Cards on Canvas**: Rendered directly in HTML5 Canvas with transparent obsidian backgrounds, rounded pill borders, and multi-line automatic text wrapping.
-- **AI Semantic Bridges**: When a new goal or report is added, Google Gemini evaluates the semantic connection, generating a relevance score ($0.0 - 1.0$) and a human-readable explanation of *why* the video helps achieve the goal.
+- **Local Semantic Bridges**: When a new goal or report is added, Ollama evaluates the semantic connection, generating a relevance score ($0.0 - 1.0$) and a human-readable explanation. Local keyword matching is used if Ollama is unavailable.
 - **Traveling Particle Links**: Dynamic illuminated particles travel along links in the graph, showing active knowledge pathways.
 
 ### 4. Zero-Spam De-Duplication Engine
@@ -109,7 +109,8 @@ However, saving them creates a **digital graveyard**:
 MLH-HACKATHON/
 ├── .env.example               # Root environment variable template
 ├── .gitignore                  # Security-first Git exclusions (.env, node_modules)
-├── package.json               # Root workspace scripts
+├── package.json               # Desktop runtime and Windows installer configuration
+├── desktop/                   # Electron startup and first-run setup
 ├── README.md                  # Comprehensive project documentation
 ├── reelsidian-extension/      # Chrome Extension (Manifest V3)
 │   ├── manifest.json          # Extension configuration & permissions
@@ -123,6 +124,7 @@ MLH-HACKATHON/
 └── server/                    # Node.js & Express Backend
     ├── server.js              # Application entry point & static file server
     ├── package.json           # Backend dependencies and scripts
+    ├── data/                  # Local SQLite database (created automatically; git-ignored)
     ├── public/                # Web Dashboard Frontend
     │   ├── index.html         # Main dashboard HTML (Deck & Graph views)
     │   ├── css/style.css      # Segregated Obsidian styling & theme tokens
@@ -135,10 +137,10 @@ MLH-HACKATHON/
         ├── routes/
         │   └── apiRoutes.js   # /api/process, /api/goals, /api/graph endpoints
         ├── services/
-        │   ├── analysisService.js      # Google Gemma 4 educational extraction
+        │   ├── analysisService.js      # Local Ollama educational extraction
         │   ├── graphService.js         # Force-graph engine & AI semantic link evaluator
         │   ├── sseService.js           # Server-Sent Events / WebSocket real-time hub
-        │   └── transcriptionService.js # ElevenLabs Scribe v2 speech-to-text
+        │   └── transcriptionService.js # Local faster-whisper speech-to-text
         └── utils/
             └── jsonParser.js           # Resilient JSON repair utility
 ```
@@ -148,12 +150,28 @@ MLH-HACKATHON/
 ## Getting Started
 
 ### Prerequisites
-- **Node.js**: v18.0.0 or higher
+- **Node.js**: v20.0.0 or higher for the backend; v22.12.0 or higher for the desktop development runtime
 - **Google Chrome**: Latest version (Manifest V3 support)
-- **API Keys**:
-  - [Google AI Studio](https://aistudio.google.com/) — Gemini / Gemma API Key
-  - [ElevenLabs](https://elevenlabs.io/) — Speech-to-Text API Key
-  - [OpenRouter](https://openrouter.ai/) — *(Optional fallback)*
+- **Ollama for Windows**: Local model runtime
+- **Python**: 3.10 or later for local faster-whisper setup
+
+### Windows Desktop App
+
+Install the generated `Reelsidian Setup` installer and launch Reelsidian from the Start menu or desktop shortcut. On first launch, the setup window starts the backend and checks Ollama, the local Gemma model, Python/faster-whisper, and Whisper model files. You can open the dashboard while an AI dependency is unavailable; the setup page explains what is missing.
+
+Model downloads are never started automatically. The setup page asks before downloading Gemma 4 E2B (about 5 GB) or the configured Whisper model (about 500 MB); both require internet access and can be cancelled. If Ollama is not installed, use **Get Ollama** to install the official Windows runtime. If it is installed but stopped, select **Start Ollama service**. Whisper setup requires Python 3.10 or newer and downloads the Python packages only after you select **Set up Whisper runtime**.
+
+For developers, install the root dependencies with `npm install` (this prepares SQLite for Electron), then launch the desktop app with `npm run dev`. Build the x64 Windows installer on Windows with `npm run dist:win`; the output is placed in `dist/`. The build does not bundle Python environments, Ollama, Gemma, Whisper weights, or user data.
+
+The desktop app stores its database, Python virtual environment, and downloaded Whisper files under Electron's per-user `userData` directory (normally `%APPDATA%\\Reelsidian`). Updates and uninstalling the application do not remove this directory. When the app first runs over an existing `server/data/reelsidian.sqlite` database, it backs the database up into the persistent user-data directory before starting the backend. Back up this directory before manually removing it.
+
+Troubleshooting:
+- **Port already in use**: close the other service using the configured `PORT` (default `5000`) and retry.
+- **Ollama unavailable**: install and start Ollama, then choose **Retry backend** or relaunch the app.
+- **Gemma missing**: confirm Ollama is running, then select **Download Gemma 4 E2B** in setup.
+- **Whisper unavailable**: install Python 3.10+, choose **Set up Whisper runtime**, and then explicitly download the Whisper model.
+
+The installer is not code-signed in this repository, so Windows may show a SmartScreen publisher warning. A trusted signing certificate is required for a signed public release.
 
 ---
 
@@ -165,25 +183,16 @@ MLH-HACKATHON/
    cd MLH-HACKATHON
    ```
 
-2. **Configure Environment Variables**:
-   Create a `.env` file inside the `server/` folder:
-   ```bash
-   cp .env.example server/.env
+2. **Install and download the local models**:
+   ```powershell
+   ollama pull gemma4:e2b
+   cd server
+   py -m venv whisper-venv
+   .\whisper-venv\Scripts\python.exe -m pip install -r requirements.txt
+   if (!(Test-Path .env)) { Copy-Item .env.example .env }
+   cd ..
    ```
-   Open `server/.env` and paste your API keys:
-   ```env
-   PORT=5000
-
-   # 1. ElevenLabs Speech-to-Text (Scribe v2)
-   ELEVENLABS_API_KEY=your_elevenlabs_key_here
-
-   # 2. Google AI Studio API Key (Gemma 4 SDK)
-   GEMINI_API_KEY=your_gemini_api_key_here
-
-   # 3. OpenRouter API Key (Optional Fallback)
-   OPENROUTER_API_KEY=your_openrouter_key_here
-   OPENROUTER_MODEL=google/gemma-4-31b-it
-   ```
+   The Whisper model weights download on first transcription. Set `WHISPER_MODEL` in `server/.env` to choose a different faster-whisper model.
 
 3. **Install Dependencies & Start Server**:
    ```bash
@@ -195,7 +204,7 @@ MLH-HACKATHON/
    ```
    ======================================================
    🚀 Reelsidian Real-Time Engine active at http://localhost:5000
-   ✨ Ephemeral RAM pipeline: Zero disk storage, maximum privacy.
+   ✨ Local SQLite storage: Reports, goals, graph links, and chats persist on this computer.
    📡 SSE Stream: http://localhost:5000/api/events
    ======================================================
    ```
@@ -229,14 +238,14 @@ MLH-HACKATHON/
 ### 2. Exploring the Dashboard
 - **Knowledge Deck View**:
   - Listen to the captured clean audio.
-  - Review the verbatim ElevenLabs transcript.
+  - Review the verbatim local Whisper transcript.
   - Read the structured problem breakdown, core solution, action items, and flashcards.
   - Export cards to Anki or copy formatted Markdown.
 - **Knowledge Graph View**:
   - Click **Knowledge Graph** in the top navigation.
   - Input an academic goal (e.g., *"Master JavaScript Scopes and Closures"*).
   - Watch the graph position your goal on the right and your study cards on the left.
-  - Observe the traveling particle links indicating semantic relevance computed by Gemini.
+  - Observe the traveling particle links indicating relevance computed locally by Ollama.
 
 ---
 
@@ -244,28 +253,38 @@ MLH-HACKATHON/
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `POST` | `/api/process` | Multipart upload (`audio` buffer, `url`, `caption`, `creator`). Transcribes with ElevenLabs and analyzes with Gemma 4. |
+| `POST` | `/api/process` | Multipart upload (`audio` buffer, `url`, `caption`, `creator`). Transcribes with local Whisper and analyzes with local Gemma 4. |
 | `POST` | `/api/analyze-text` | JSON body (`text`, `caption`, `url`). Directly analyzes textual transcripts. |
 | `GET` | `/api/graph` | Retrieves current graph state (`nodes`, `links`, `goals`). |
-| `POST` | `/api/goals` | Adds an academic goal and triggers Gemini semantic link evaluations. |
+| `POST` | `/api/goals` | Adds an academic goal and triggers local Ollama semantic link evaluations. |
 | `DELETE` | `/api/goals/:id` | Removes an academic goal and cleans up associated graph links. |
 | `GET` | `/api/events` | Server-Sent Events (SSE) stream for real-time live updates. |
+| `GET` | `/api/health` | Reports local Ollama model availability and Whisper runtime readiness. |
+| `GET` | `/api/reports?search=...` | Lists and searches locally saved study reports. |
+| `GET` | `/api/reports/:id` | Opens a saved report by ID. |
+| `DELETE` | `/api/reports/:id` | Deletes a saved report and removes orphaned graph links. |
+| `POST` | `/api/chats` | Creates a local conversation. |
+| `GET` | `/api/chats?search=...` | Lists and searches saved chats and their messages. |
+| `GET` | `/api/chats/:id` | Opens a chat with its conversation history. |
+| `POST` | `/api/chats/:id/messages` | Appends a user, assistant, or system message to a chat. |
+| `DELETE` | `/api/chats/:id` | Deletes a chat and its messages. |
 
 ---
 
 ## Privacy & Security Architecture
 
-1. **Zero Disk Storage**: Audio streams are captured into ephemeral memory buffers in RAM, transcribed, and immediately freed. No raw user audio or video recordings are saved to disk.
-2. **Tab Capture Isolation**: The extension strictly captures the audio of the active media tab using `chrome.tabCapture`. It does not record your screen, microphone, or camera.
-3. **Secret Protection**: API keys are isolated in `server/.env`, which is strictly ignored by Git. No credentials are baked into client-side code.
+1. **Temporary Audio Handling**: Uploaded audio is written to a uniquely named temporary file for the local Whisper worker, then removed after transcription. The application does not retain it as a report file.
+2. **Local persistence**: Reports, captions, transcripts, goals, graph connections, and chat messages are stored in `server/data/reelsidian.sqlite`. Set `REELSIDIAN_DB_PATH` to change its location. Database files are ignored by Git.
+3. **Tab Capture Isolation**: The extension strictly captures the audio of the active media tab using `chrome.tabCapture`. It does not record your screen, microphone, or camera.
+4. **Local inference**: Study generation and transcription do not automatically send prompts or audio to remote AI providers. Initial model downloads require internet access. Browser fonts/libraries and accessed video pages may also use the network; this project has not been certified as fully offline.
 
 ---
 
 ## Technology Stack
 
 - **Extension**: Chrome Extension Manifest V3, Web Audio API, WebRTC `tabCapture`, `chrome.offscreen`.
-- **Backend**: Node.js, Express, Multer, Server-Sent Events.
-- **AI & Speech Models**: ElevenLabs Scribe v2, Google Gemma 4 (Google AI Studio / OpenRouter).
+- **Desktop & Backend**: Electron, Node.js, Express, Multer, SQLite, Server-Sent Events.
+- **AI & Speech Models**: Local Gemma 4 E2B via Ollama and local faster-whisper.
 - **Frontend & Visuals**: Vanilla JavaScript (ES6+), Three.js (WebGL Fluted Glass Shader), Force-Graph, D3.js.
 - **Typography & Theme**: Outfit, JetBrains Mono, Obsidian Glass, Burnt Copper (`#ea580c`), Warm Amber (`#fed7aa`).
 
